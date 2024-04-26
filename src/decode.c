@@ -692,6 +692,24 @@ static void obmc_lowest_px(Dav1dTaskContext *const t,
         }
 }
 
+static FILE* load_hidden_message_output_file() {
+  static FILE* f = NULL;
+
+  if(f == NULL)
+    f = fopen(getenv("HIDDEN_MESSAGE_OUTPUT_FILE"), "w");
+
+  return f;
+}
+
+static void log_angle(int angle) {
+    if (angle != 6) {
+        int injected_value = angle - ((angle / 2) * 2);
+        fprintf(load_hidden_message_output_file(), "Read angle value: %d, injected value => %d\n", angle, injected_value);
+    } else {
+        fprintf(load_hidden_message_output_file(), "[Skipping] Angle is 6, ignoring injected value\n");
+    }
+}
+
 static int decode_b(Dav1dTaskContext *const t,
                     const enum BlockLevel bl,
                     const enum BlockSize bs,
@@ -1079,6 +1097,7 @@ static int decode_b(Dav1dTaskContext *const t,
         {
             uint16_t *const acdf = ts->cdf.m.angle_delta[b->y_mode - VERT_PRED];
             const int angle = dav1d_msac_decode_symbol_adapt8(&ts->msac, acdf, 6);
+            log_angle(angle);
             b->y_angle = angle - 3;
         } else {
             b->y_angle = 0;
@@ -1125,6 +1144,7 @@ static int decode_b(Dav1dTaskContext *const t,
             {
                 uint16_t *const acdf = ts->cdf.m.angle_delta[b->uv_mode - VERT_PRED];
                 const int angle = dav1d_msac_decode_symbol_adapt8(&ts->msac, acdf, 6);
+                log_angle(angle);
                 b->uv_angle = angle - 3;
             }
         }

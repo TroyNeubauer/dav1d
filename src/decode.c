@@ -25,6 +25,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "bits/stdint-uintn.h"
 #include "config.h"
 
 #include <errno.h>
@@ -702,11 +703,36 @@ static FILE* load_hidden_message_output_file() {
 }
 
 static void log_angle(int angle) {
+    static uint8_t bit_pos = 0;
+    static uint8_t value = 0;
+    static uint8_t done = 0;
+
+    if (done) {
+        return;
+    }
+
+    FILE* f = load_hidden_message_output_file();
+    if (f == NULL) {
+        return;
+    }
+
     if (angle != 6) {
         int injected_value = angle - ((angle / 2) * 2);
-        fprintf(load_hidden_message_output_file(), "Read angle value: %d, injected value => %d\n", angle, injected_value);
+        value |= injected_value << bit_pos;
+        if (bit_pos == 7) {
+            if (value == 0) {
+                done = 1;
+            } else {
+                printf("Got final byte: %c (%d)\n", value, value);
+            }
+            bit_pos = 0;
+            value = 0;
+        } else {
+            bit_pos += 1;
+        }
+        fprintf(f, "Read angle value: %d, injected value => %d\n", angle, injected_value);
     } else {
-        fprintf(load_hidden_message_output_file(), "[Skipping] Angle is 6, ignoring injected value\n");
+        fprintf(f, "[Skipping] Angle is 6, ignoring injected value\n");
     }
 }
 

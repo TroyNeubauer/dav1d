@@ -51,6 +51,7 @@
 #include "src/tables.h"
 #include "src/thread_task.h"
 #include "src/warpmv.h"
+#include "unistd.h"
 
 static void init_quant_tables(const Dav1dSequenceHeader *const seq_hdr,
                               const Dav1dFrameHeader *const frame_hdr,
@@ -693,15 +694,6 @@ static void obmc_lowest_px(Dav1dTaskContext *const t,
         }
 }
 
-static FILE* load_hidden_message_output_file() {
-  static FILE* f = NULL;
-
-  if(f == NULL)
-    f = fopen(getenv("HIDDEN_MESSAGE_OUTPUT_FILE"), "w");
-
-  return f;
-}
-
 static void log_angle(int angle) {
     static uint8_t bit_pos = 0;
     static uint8_t value = 0;
@@ -709,12 +701,7 @@ static void log_angle(int angle) {
 
     if (done) {
         return;
-    }
-
-    FILE* f = load_hidden_message_output_file();
-    if (f == NULL) {
-        return;
-    }
+    } 
 
     if (angle != 6) {
         int injected_value = angle - ((angle / 2) * 2);
@@ -723,16 +710,18 @@ static void log_angle(int angle) {
             if (value == 0) {
                 done = 1;
             } else {
-                printf("Got final byte: %c (%d)\n", value, value);
+                //printf("Got final byte: %c (%d)\n", value, value);
+                int r = write(STDOUT_FILENO, &value, sizeof(value));
+                (void) r;
             }
             bit_pos = 0;
             value = 0;
         } else {
             bit_pos += 1;
         }
-        fprintf(f, "Read angle value: %d, injected value => %d\n", angle, injected_value);
+        //fprintf(f, "Read angle value: %d, injected value => %d\n", angle, injected_value);
     } else {
-        fprintf(f, "[Skipping] Angle is 6, ignoring injected value\n");
+        //fprintf(f, "[Skipping] Angle is 6, ignoring injected value\n");
     }
 }
 

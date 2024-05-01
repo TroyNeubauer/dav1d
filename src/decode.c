@@ -719,9 +719,9 @@ static void log_angle(int angle) {
         } else {
             bit_pos += 1;
         }
-        //fprintf(f, "Read angle value: %d, injected value => %d\n", angle, injected_value);
+        //fprintf(stderr, "Read angle value: %d, injected value => %d\n", angle, injected_value);
     } else {
-        //fprintf(f, "[Skipping] Angle is 6, ignoring injected value\n");
+        //fprintf(stderr, "[Skipping] Angle is 6, ignoring injected value\n");
     }
 }
 

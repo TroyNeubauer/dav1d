@@ -31,12 +31,24 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include<unistd.h>
 
 #include "common/attributes.h"
 #include "common/intops.h"
 
 #include "input/input.h"
 #include "input/demuxer.h"
+
+#if defined(_WIN32) || defined(__OS2__)
+#include <io.h>
+#include <fcntl.h>
+#ifdef __OS2__
+#define _setmode setmode
+#define _fileno fileno
+#define _O_BINARY O_BINARY
+#endif
+#endif
+
 
 struct DemuxerContext {
     DemuxerPriv *data;
@@ -54,6 +66,15 @@ static const Demuxer *const demuxers[] = {
     NULL
 };
 
+static FILE *set_binary_mode(FILE *stream) {
+  (void)stream;
+#if defined(_WIN32) || defined(__OS2__)
+  _setmode(_fileno(stream), _O_BINARY);
+#endif
+  return stream;
+}
+
+
 int input_open(DemuxerContext **const c_out,
                const char *const name, const char *const filename,
                unsigned fps[2], unsigned *const num_frames, unsigned timebase[2])
@@ -61,6 +82,9 @@ int input_open(DemuxerContext **const c_out,
     const Demuxer *impl;
     DemuxerContext *c;
     int res, i;
+    FILE *f;
+    char *fname;
+    char name_buff[16];
 
     if (name) {
         for (i = 0; demuxers[i]; i++) {
@@ -82,15 +106,75 @@ int input_open(DemuxerContext **const c_out,
             fprintf(stderr, "Failed to allocate memory\n");
             return DAV1D_ERR(ENOMEM);
         }
-        FILE *f = fopen(filename, "rb");
+
+        if (!strcmp(filename, "-")) {
+            fprintf(stderr, "david reading from stdin\n");
+
+            set_binary_mode(stdin);
+
+            char *template_name = "dav1d-XXXXXX";
+
+            memset(name_buff, 0, sizeof(name_buff));
+
+            // Copy the relevant information in the buffers
+            memcpy(name_buff, template_name, 12);
+
+            #if defined(_WIN32) || defined(__OS2__)
+
+            int err = _mktemp_s( name_buff, 32 );
+
+            if (err != 0) {
+                fprintf(stderr, "Failed to make a temp file: %s\n", strerror(errno));
+                return errno ? DAV1D_ERR(errno) : DAV1D_ERR(EIO);
+            }
+
+            f = fopen(name_buff, "w+b");
+            printf("Reached here\n");
+
+            #else
+
+            int fd = mkstemp(name_buff);
+
+            if (fd < 1) {
+                fprintf(stderr, "Failed to make a temp file: %s\n", strerror(errno));
+                return errno ? DAV1D_ERR(errno) : DAV1D_ERR(EIO);
+            }
+
+            f = fdopen(fd, "w+b");
+            #endif
+
+            if (!f) {
+                fprintf(stderr, "Failed to open temporary file: %s\n", strerror(errno));
+                if (!strcmp(filename, "-")) unlink(name_buff);
+                return errno ? DAV1D_ERR(errno) : DAV1D_ERR(EIO);
+            }
+
+            size_t n, m;
+            unsigned char buff[8192];
+            do {
+                n = fread(buff, 1, sizeof buff, stdin);
+                if (n) m = fwrite(buff, 1, n, f);
+                else   m = 0;
+            } while ((n > 0) && (n == m));
+
+            fname = name_buff;
+
+            fseek(f, SEEK_SET, 0);
+        } else {
+            fname = (char *) filename;
+            f = fopen(filename, "rb");
+        }
+
         if (!f) {
-            fprintf(stderr, "Failed to open input file %s: %s\n", filename, strerror(errno));
+            fprintf(stderr, "Failed to open input file %s: %s\n", fname, strerror(errno));
+
             return errno ? DAV1D_ERR(errno) : DAV1D_ERR(EIO);
         }
         res = !!fread(probe_data, 1, probe_sz, f);
         fclose(f);
         if (!res) {
             free(probe_data);
+            if (!strcmp(filename, "-")) unlink(fname);
             fprintf(stderr, "Failed to read probe data\n");
             return errno ? DAV1D_ERR(errno) : DAV1D_ERR(EIO);
         }
@@ -105,7 +189,8 @@ int input_open(DemuxerContext **const c_out,
         if (!demuxers[i]) {
             fprintf(stderr,
                     "Failed to probe demuxer for file %s\n",
-                    filename);
+                    fname);
+            if (!strcmp(filename, "-")) unlink(fname);
             return DAV1D_ERR(ENOPROTOOPT);
         }
     }
@@ -116,12 +201,15 @@ int input_open(DemuxerContext **const c_out,
     }
     c->impl = impl;
     c->data = (DemuxerPriv *) c->priv_data;
-    if ((res = impl->open(c->data, filename, fps, num_frames, timebase)) < 0) {
+
+    if ((res = impl->open(c->data, fname, fps, num_frames, timebase)) < 0) {
+        if (!strcmp(filename, "-")) unlink(fname);
         free(c);
         return res;
     }
     *c_out = c;
 
+    if (!strcmp(filename, "-")) unlink(fname);
     return 0;
 }
 
